@@ -14,6 +14,7 @@ const { GeminiClient } = require('./src/infrastructure/gemini/shared/GeminiClien
 const { GeminiCategoryClassifierAdapter } = require('./src/infrastructure/gemini/expense/GeminiCategoryClassifierAdapter');
 const { GeminiInsightsGeneratorAdapter } = require('./src/infrastructure/gemini/insights/GeminiInsightsGeneratorAdapter');
 const { GeminiFinancialAgentAdapter } = require('./src/infrastructure/gemini/chat/GeminiFinancialAgentAdapter');
+const { AwesomeApiCurrencyConverterAdapter } = require('./src/infrastructure/external/currency/AwesomeApiCurrencyConverterAdapter');
 const { BudgetStatusService } = require('./src/application/usecase/budget/BudgetStatusService');
 const { RegisterUserUseCase } = require('./src/application/usecase/auth/RegisterUserUseCase');
 const { AuthenticateUserUseCase } = require('./src/application/usecase/auth/AuthenticateUserUseCase');
@@ -23,6 +24,7 @@ const { ListMonthlyExpensesUseCase } = require('./src/application/usecase/expens
 const { RemoveExpenseUseCase } = require('./src/application/usecase/expense/RemoveExpenseUseCase');
 const { SetBudgetUseCase } = require('./src/application/usecase/budget/SetBudgetUseCase');
 const { GenerateInsightsUseCase } = require('./src/application/usecase/insights/GenerateInsightsUseCase');
+const { ConvertCurrencyUseCase } = require('./src/application/usecase/currency/ConvertCurrencyUseCase');
 const { ChatWithAgentUseCase } = require('./src/application/usecase/chat/ChatWithAgentUseCase');
 const { createApp } = require('./src/api/createApp');
 
@@ -57,6 +59,9 @@ async function start() {
   const generator = new GeminiInsightsGeneratorAdapter(gemini);
   const agent = new GeminiFinancialAgentAdapter(gemini);
 
+  // Infraestrutura: Integrações com APIs Externas
+  const currencyConverter = new AwesomeApiCurrencyConverterAdapter();
+
   // Aplicação: UseCases
   const budgetStatus = new BudgetStatusService({ expenses, budgets });
   const registerUser = new RegisterUserUseCase({ users, passwordHasher, tokenService });
@@ -67,6 +72,7 @@ async function start() {
   const removeExpense = new RemoveExpenseUseCase({ expenses });
   const setBudget = new SetBudgetUseCase({ budgets, budgetStatus });
   const generateInsights = new GenerateInsightsUseCase({ expenses, budgets, generator });
+  const convertCurrency = new ConvertCurrencyUseCase({ currencyConverter });
 
   const chatWithAgent = new ChatWithAgentUseCase({
     chatMessages,
@@ -77,6 +83,7 @@ async function start() {
     listMonthlyExpenses,
     setBudget,
     generateInsights,
+    convertCurrency,
   });
 
   // API: Controllers + Middlewares

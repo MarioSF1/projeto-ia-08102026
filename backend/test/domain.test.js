@@ -42,7 +42,13 @@ const { RemoveExpenseUseCase } = require('../src/application/usecase/expense/Rem
 const { SetBudgetUseCase } = require('../src/application/usecase/budget/SetBudgetUseCase');
 const { GenerateInsightsUseCase } = require('../src/application/usecase/insights/GenerateInsightsUseCase');
 const { ChatWithAgentUseCase } = require('../src/application/usecase/chat/ChatWithAgentUseCase');
+const { ConvertCurrencyUseCase } = require('../src/application/usecase/currency/ConvertCurrencyUseCase');
 const { ExternalServiceError } = require('../src/application/usecase/shared/ExternalServiceError');
+const { CurrencyConverterPort } = require('../src/domain/repository/external/CurrencyConverterPort');
+const {
+  AwesomeApiCurrencyConverterAdapter,
+  normalizeCurrencyCode,
+} = require('../src/infrastructure/external/currency/AwesomeApiCurrencyConverterAdapter');
 
 // Infraestrutura: Segurança, Mappers, Adapters e Gemini
 const { PasswordHasher } = require('../src/infrastructure/security/auth/PasswordHasher');
@@ -520,4 +526,154 @@ test('HTTP createApp: Controllers + DTOs + Middlewares integrados', async () => 
   } finally {
     await new Promise((resolve) => server.close(resolve));
   }
+});
+
+test('AwesomeApiCurrencyConverterAdapter e ConvertCurrencyUseCase: normaliza moedas, consulta API externa e converte valores', async () => {
+  assert.strictEqual(normalizeCurrencyCode('dólares'), 'USD');
+  assert.strictEqual(normalizeCurrencyCode('dolar'), 'USD');
+  assert.strictEqual(normalizeCurrencyCode('euro'), 'EUR');
+  assert.strictEqual(normalizeCurrencyCode('libras'), 'GBP');
+  assert.strictEqual(normalizeCurrencyCode('pesos'), 'ARS');
+
+  const fakeFetch = async (url) => {
+    assert.ok(url.includes('USD-BRL'));
+    return {
+      ok: true,
+      json: async () => ({
+        USDBRL: {
+          code: 'USD',
+          codein: 'BRL',
+          name: 'Dólar Americano/Real Brasileiro',
+          bid: '5.7500',
+          create_date: '2026-11-02 12:00:00',
+        },
+      }),
+    };
+  };
+
+  const adapter = new AwesomeApiCurrencyConverterAdapter({ fetchFn: fakeFetch });
+  const useCase = new ConvertCurrencyUseCase({ currencyConverter: adapter });
+
+  const converted = await useCase.execute({ amount: 50, fromCurrency: 'dólares' });
+  assert.strictEqual(converted.amount, 50);
+  assert.strictEqual(converted.fromCurrency, 'USD');
+  assert.strictEqual(converted.toCurrency, 'BRL');
+  assert.strictEqual(converted.rate, 5.75);
+  assert.strictEqual(converted.convertedAmount, 287.5);
+  assert.strictEqual(converted.source, 'AwesomeAPI');
+
+  // Conversão de mesma moeda não dispara fetch
+  const same = await adapter.convert({ amount: 100, fromCurrency: 'BRL', toCurrency: 'BRL' });
+  assert.strictEqual(same.rate, 1.0);
+  assert.strictEqual(same.convertedAmount, 100);
+
+  // Tratamento de erro quando API externa falha
+  const brokenAdapter = new AwesomeApiCurrencyConverterAdapter({
+    fetchFn: async () => ({ ok: false, status: 500 }),
+  });
+  const brokenUseCase = new ConvertCurrencyUseCase({ currencyConverter: brokenAdapter });
+  await assert.rejects(brokenUseCase.execute({ fromCurrency: 'USD' }), ExternalServiceError);
+});
+
+test('ChatWithAgentUseCase integra ferramenta convert_currency via Function Calling para despesas em moeda estrangeira', async () => {
+  const { register, update, listMonthly, remove, setBudget } = setup();
+  const chatMessages = new MemChatMessages();
+  const generator = Object.assign(new InsightsGeneratorPort(), {
+    generate: async () => ({ summary: 'Ok', attentionPoint: 'Nenhum', tips: [] }),
+  });
+  const generateInsights = new GenerateInsightsUseCase({ expenses: new MemExpenses(), budgets: new MemBudgets(), generator });
+
+  const fakeConverter = {
+    convert: async ({ amount = 1, fromCurrency, toCurrency = 'BRL' }) => ({
+      amount,
+      fromCurrency: fromCurrency.toUpperCase(),
+      toCurrency,
+      rate: 5.8,
+      convertedAmount: Math.round(amount * 5.8 * 100) / 100,
+      quotationName: 'Dólar Americano/Real Brasileiro',
+      source: 'AwesomeAPI',
+      timestamp: '2026-11-02T12:00:00Z',
+    }),
+  };
+  const convertCurrency = new ConvertCurrencyUseCase({ currencyConverter: fakeConverter });
+
+  let callStep = 0;
+  const fakeGeminiClient = {
+    generateContent: async () => {
+      callStep++;
+      if (callStep === 1) {
+        // Passo 1: Gemini decide chamar a API externa de conversão de moeda
+        return {
+          parts: [
+            {
+              functionCall: {
+                name: 'convert_currency',
+                args: { amount: 50, fromCurrency: 'USD' },
+              },
+            },
+          ],
+        };
+      }
+      if (callStep === 2) {
+        // Passo 2: Com o valor convertido em mãos, Gemini decide registrar a despesa em BRL com anotação
+        return {
+          parts: [
+            {
+              functionCall: {
+                name: 'register_expense',
+                args: {
+                  description: 'Almoço no exterior',
+                  amount: 290.0,
+                  notes: 'US$ 50,00 @ R$ 5,80 via AwesomeAPI',
+                  category: 'Alimentação',
+                },
+              },
+            },
+          ],
+        };
+      }
+      return {
+        parts: [
+          {
+            text: 'Consultei a cotação do dólar na AwesomeAPI (R$ 5,80). Converti US$ 50,00 para R$ 290,00 e registrei o almoço na tabela!',
+          },
+        ],
+      };
+    },
+  };
+
+  const agent = new GeminiFinancialAgentAdapter(fakeGeminiClient);
+  const chatWithAgent = new ChatWithAgentUseCase({
+    chatMessages,
+    agent,
+    registerExpense: register,
+    updateExpense: update,
+    removeExpense: remove,
+    listMonthlyExpenses: listMonthly,
+    setBudget,
+    generateInsights,
+    convertCurrency,
+  });
+
+  const user = { id: 8, name: 'Mario', email: 'mario@teste.com' };
+  const out = await chatWithAgent.execute({
+    user,
+    message: 'Gastei 50 dólares no almoço nos EUA hoje',
+  });
+
+  assert.ok(out.reply.includes('AwesomeAPI'));
+  assert.ok(out.reply.includes('290,00'));
+
+  // Verifica que foram registradas as actions esperadas: currency_converted, expense_registered e model_info
+  const currencyAction = out.actions.find((a) => a.type === 'currency_converted');
+  assert.ok(currencyAction);
+  assert.strictEqual(currencyAction.fromCurrency, 'USD');
+  assert.strictEqual(currencyAction.rate, 5.8);
+  assert.strictEqual(currencyAction.convertedAmount, 290);
+  assert.strictEqual(currencyAction.source, 'AwesomeAPI');
+
+  const expenseAction = out.actions.find((a) => a.type === 'expense_registered');
+  assert.ok(expenseAction);
+  assert.strictEqual(expenseAction.expense.amount, 290);
+  assert.strictEqual(expenseAction.expense.notes, 'US$ 50,00 @ R$ 5,80 via AwesomeAPI');
 });

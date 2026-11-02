@@ -7,6 +7,8 @@ import { useAgentChat } from '../context/AgentChatContext';
 import type { AgentAction } from '@/types';
 
 const QUICK_PROMPTS = [
+  'Gastei 50 dólares no almoço nos EUA hoje',
+  'Qual a cotação do dólar e euro hoje?',
   'Gastei R$ 38,90 no almoço hoje com o pessoal da faculdade',
   'Gastei 24,50 de Uber para ir para a aula hoje',
   'Definir meu orçamento deste mês para R$ 2.000',
@@ -16,6 +18,15 @@ const QUICK_PROMPTS = [
 
 function renderActionBadge(action: AgentAction, idx: number) {
   switch (action.type) {
+    case 'currency_converted':
+      return (
+        <div key={idx} className="agent-action-pill info">
+          💱 <strong>API Externa (AwesomeAPI):</strong>{' '}
+          {action.amount != null ? `${action.amount} ${action.fromCurrency}` : action.fromCurrency} ={' '}
+          {action.convertedAmount != null ? formatBRL(action.convertedAmount) : `R$ ${action.rate.toFixed(2)}`} (1{' '}
+          {action.fromCurrency} = {formatBRL(action.rate)})
+        </div>
+      );
     case 'expense_registered':
       return (
         <div key={idx} className="agent-action-pill success">

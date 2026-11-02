@@ -14,6 +14,7 @@ class ChatWithAgentUseCase {
     listMonthlyExpenses,
     setBudget,
     generateInsights,
+    convertCurrency,
   }) {
     Object.assign(this, {
       chatMessages,
@@ -24,6 +25,7 @@ class ChatWithAgentUseCase {
       listMonthlyExpenses,
       setBudget,
       generateInsights,
+      convertCurrency,
     });
   }
 
@@ -123,6 +125,28 @@ class ChatWithAgentUseCase {
         });
         actions.push({ type: 'insights_generated', insights });
         return insights;
+      }),
+      convert_currency: safeTool(async (args) => {
+        if (!this.convertCurrency) {
+          throw new Error('Serviço de conversão de moedas não configurado');
+        }
+        const result = await this.convertCurrency.execute({
+          amount: args.amount,
+          fromCurrency: args.fromCurrency,
+          toCurrency: args.toCurrency || 'BRL',
+        });
+        actions.push({
+          type: 'currency_converted',
+          fromCurrency: result.fromCurrency,
+          toCurrency: result.toCurrency,
+          rate: result.rate,
+          amount: result.amount,
+          convertedAmount: result.convertedAmount,
+          quotationName: result.quotationName,
+          source: result.source,
+          timestamp: result.timestamp,
+        });
+        return result;
       }),
     };
 

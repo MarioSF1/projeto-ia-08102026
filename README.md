@@ -1,9 +1,10 @@
 # GastoCerto IA — Agente Pessoal de Gestão Financeira (Node.js + PostgreSQL + Gemini + Next.js)
 
-Produto: plataforma inteligente de gestão financeira pessoal. O backend (**Node.js/Express + PostgreSQL**) autentica usuários com **JWT**, aplica regras de negócio em **DDD / Arquitetura Hexagonal** e integra a **API do Google Gemini** para:
-1. **Agente Pessoal Conversacional (Function Calling / Tools)**: o usuário conversa em linguagem natural para registrar gastos com anotações, editar/remover lançamentos, consultar o resumo do mês, definir orçamento e pedir conselhos.
-2. **Categorização Automática de Gastos** (Structured JSON Output).
-3. **Consultoria e Insights Mensais** (Structured JSON Output).
+Produto: plataforma inteligente de gestão financeira pessoal. O backend (**Node.js/Express + PostgreSQL**) autentica usuários com **JWT**, aplica regras de negócio em **DDD / Arquitetura Hexagonal**, integra a **API do Google Gemini** e a **API Externa AwesomeAPI (Câmbio em Tempo Real)** para:
+1. **Agente Pessoal Conversacional (Function Calling / Tools)**: o usuário conversa em linguagem natural para registrar gastos com anotações, converter moedas estrangeiras consultando API externa de cotações em tempo real, editar/remover lançamentos, consultar o resumo do mês, definir orçamento e pedir conselhos.
+2. **Integração com API Externa (AwesomeAPI)**: consulta taxas de câmbio oficiais atualizadas (USD, EUR, GBP, ARS, etc.) para registrar despesas internacionais convertidas para Reais com histórico da cotação.
+3. **Categorização Automática de Gastos** (Structured JSON Output via Gemini).
+4. **Consultoria e Insights Mensais** (Structured JSON Output via Gemini).
 
 ---
 
@@ -19,11 +20,11 @@ backend/
 │   │   ├── entity/{user,expense,budget,chat,insights}/
 │   │   ├── enums/{expense,budget,chat}/
 │   │   ├── exception/{shared,user,expense,insights}/
-│   │   ├── repository/{user,expense,budget,chat,ai}/
+│   │   ├── repository/{user,expense,budget,chat,ai,external}/
 │   │   └── valueobject/{shared,user,expense}/
 │   ├── application/                               # Orquestração de casos de uso e contratos
 │   │   ├── dto/{auth,expense,budget,insights,chat}/
-│   │   └── usecase/{shared,auth,expense,budget,insights,chat}/
+│   │   └── usecase/{shared,auth,expense,budget,insights,chat,currency}/
 │   ├── infrastructure/                            # Detalhes técnicos e integrações externas
 │   │   ├── persistence/
 │   │   │   ├── connection/PgConnection.js
@@ -32,13 +33,14 @@ backend/
 │   │   │   ├── repository/{user,expense,budget,chat}/
 │   │   │   └── adapter/{user,expense,budget,chat}/
 │   │   ├── security/auth/{PasswordHasher,JwtTokenService}.js
-│   │   └── gemini/{shared,expense,insights,chat}/
+│   │   ├── gemini/{shared,expense,insights,chat}/
+│   │   └── external/currency/AwesomeApiCurrencyConverterAdapter.js
 │   └── api/                                       # Entrada HTTP (Express)
 │       ├── controller/{auth,expense,budget,insights,chat}/
 │       ├── dto/{auth,expense,budget,insights,chat}/
 │       ├── middleware/{authMiddleware,errorHandlerMiddleware}.js
 │       └── createApp.js
-└── test/domain.test.js                            # 13 testes automatizados (npm test)
+└── test/domain.test.js                            # Testes automatizados de domínio e integração (npm test)
 ```
 
 ### Frontend (`web/src/`) — Arquitetura em Camadas e Contextos de Feature

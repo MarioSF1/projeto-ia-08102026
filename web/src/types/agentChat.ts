@@ -12,6 +12,17 @@ export type AgentAction =
   | { type: 'expense_removed'; id: number }
   | { type: 'budget_updated'; month: string; budget: BudgetStatus }
   | { type: 'insights_generated'; insights: Insights }
+  | {
+      type: 'currency_converted';
+      fromCurrency: string;
+      toCurrency: string;
+      rate: number;
+      amount?: number;
+      convertedAmount?: number;
+      quotationName?: string;
+      source?: string;
+      timestamp?: string;
+    }
   | { type: 'model_info'; modelUsed: string; requestedModel?: string; fallbackUsed?: boolean };
 
 export type ChatMessage = {
